@@ -37,6 +37,16 @@ python -m pytest -q
 
 영상 생성에는 시스템에 FFmpeg가 설치되어 있어야 합니다. 설치 여부는 `ffmpeg -version`으로 확인합니다.
 
+## Coverr 영상 다운로드
+
+`.env`에 `COVERR_API_KEY`를 설정한 뒤 다음 명령으로 키워드에 맞는 세로형 MP4를 받습니다. 15~20초 영상을 우선 선택하며, 결과는 `assets/downloads/`에 저장됩니다.
+
+```bash
+./scripts/download_coverr_video.sh "forest"
+```
+
+키워드를 생략하면 터미널에서 입력을 요청합니다.
+
 ## 다음 확장 후보
 
 - 캐릭터 이미지와 배경 이미지를 따로 업로드하는 모션 프리셋 화면
