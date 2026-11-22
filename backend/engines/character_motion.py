@@ -1,12 +1,11 @@
 
-import math
 import shutil
 import subprocess
 import tempfile
 
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from backend.core.motion_presets import get_motion
 from backend.engines.base import (
@@ -171,3 +170,91 @@ class CharacterMotionEngine(AnimationEngine):
                 "height": request.height,
             },
         )
+
+    def generate(
+        self,
+        character_path: Path,
+        background_path: Path | None,
+        output_path: Path,
+        options: dict,
+    ) -> Path:
+        """Render a transparent character sequence and encode it as an MP4."""
+        ffmpeg = shutil.which("ffmpeg")
+
+        if not ffmpeg:
+            raise RuntimeError("FFmpeg is not installed.")
+
+        width = options.get("width", 1280)
+        height = options.get("height", 720)
+        fps = options.get("fps", 24)
+        duration = options.get("duration", 5)
+        preset = options.get("preset", "bounce")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            frame_dir = Path(temp_dir) / "frames"
+            result = self.render(
+                EngineRequest(
+                    scene_id="character_video",
+                    character_id="character",
+                    engine_type=self.engine_type,
+                    action_name=preset,
+                    image_path=character_path,
+                    output_path=frame_dir,
+                    duration=duration,
+                    fps=fps,
+                    width=width,
+                    height=height,
+                    params={"preset": preset},
+                )
+            )
+
+            self._apply_background(
+                frame_dir=frame_dir,
+                background_path=background_path,
+                width=width,
+                height=height,
+            )
+
+            subprocess.run(
+                [
+                    ffmpeg,
+                    "-y",
+                    "-framerate", str(fps),
+                    "-i", str(frame_dir / "frame_%06d.png"),
+                    "-frames:v", str(result.frame_count),
+                    "-c:v", "libx264",
+                    "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart",
+                    str(output_path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+        return output_path
+
+    @staticmethod
+    def _apply_background(
+        frame_dir: Path,
+        background_path: Path | None,
+        width: int,
+        height: int,
+    ) -> None:
+        if background_path:
+            with Image.open(background_path) as image:
+                background = ImageOps.fit(
+                    image.convert("RGB"),
+                    (width, height),
+                    method=Image.Resampling.LANCZOS,
+                )
+        else:
+            background = Image.new("RGB", (width, height), "#f7f4fc")
+
+        for frame_path in sorted(frame_dir.glob("frame_*.png")):
+            with Image.open(frame_path) as frame:
+                composited = background.copy()
+                composited.paste(frame, mask=frame.getchannel("A"))
+                composited.save(frame_path, format="PNG")

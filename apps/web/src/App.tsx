@@ -9,7 +9,10 @@ type GenerationResult = {
 }
 
 function App() {
+  const [mode, setMode] = useState<'character' | 'zoom'>('character')
   const [file, setFile] = useState<File | null>(null)
+  const [background, setBackground] = useState<File | null>(null)
+  const [preset, setPreset] = useState('bounce')
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -33,12 +36,21 @@ function App() {
 
     try {
       const data = new FormData()
-      data.append('file', file)
+      const isCharacterMode = mode === 'character'
+      data.append(isCharacterMode ? 'character' : 'file', file)
 
-      const response = await fetch('/videos/generate', {
+      if (isCharacterMode) {
+        data.append('preset', preset)
+        if (background) data.append('background', background)
+      }
+
+      const response = await fetch(
+        isCharacterMode ? '/videos/character/generate' : '/videos/generate',
+        {
         method: 'POST',
         body: data,
-      })
+        },
+      )
       const result = await response.json()
 
       if (!response.ok) {
@@ -63,15 +75,27 @@ function App() {
         <p className="eyebrow">KIDS MOTION ENGINE</p>
         <h1>사진 한 장을<br />짧은 영상으로</h1>
         <p className="intro">
-          이미지를 업로드하면 부드러운 줌 효과가 적용된 5초 MP4 영상을 만듭니다.
+          투명 배경 캐릭터 PNG를 업로드하면 점프, 가벼운 흔들기, 댄스 모션의 5초 MP4를 만듭니다.
         </p>
       </section>
 
       <section className="generator" aria-labelledby="generator-title">
         <h2 id="generator-title">영상 만들기</h2>
+        <div className="mode-switch" role="group" aria-label="영상 종류">
+          <button
+            className={mode === 'character' ? 'selected' : ''}
+            type="button"
+            onClick={() => setMode('character')}
+          >캐릭터 모션</button>
+          <button
+            className={mode === 'zoom' ? 'selected' : ''}
+            type="button"
+            onClick={() => setMode('zoom')}
+          >사진 줌</button>
+        </div>
         <form onSubmit={generateVideo}>
           <label className="file-picker" htmlFor="image-file">
-            <span>{file ? file.name : '이미지를 선택하세요'}</span>
+            <span>{file ? file.name : mode === 'character' ? '투명 PNG 캐릭터를 선택하세요' : '이미지를 선택하세요'}</span>
             <small>PNG · JPG · WEBP</small>
           </label>
           <input
@@ -83,6 +107,27 @@ function App() {
               setError(null)
             }}
           />
+          {mode === 'character' && (
+            <>
+              <label className="select-label" htmlFor="preset">모션</label>
+              <select id="preset" value={preset} onChange={(event) => setPreset(event.target.value)}>
+                <option value="bounce">점프</option>
+                <option value="wave">가볍게 흔들기</option>
+                <option value="sway">좌우 흔들기</option>
+                <option value="dance">댄스</option>
+              </select>
+              <label className="file-picker" htmlFor="background-file">
+                <span>{background ? background.name : '배경 이미지 선택 (선택 사항)'}</span>
+                <small>없으면 단색 배경</small>
+              </label>
+              <input
+                id="background-file"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(event) => setBackground(event.target.files?.[0] ?? null)}
+              />
+            </>
+          )}
           <button type="submit" disabled={isGenerating}>
             {isGenerating ? '영상을 만드는 중…' : '5초 영상 만들기'}
           </button>

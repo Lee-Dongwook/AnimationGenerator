@@ -56,3 +56,27 @@ def test_render_character_frames(tmp_path):
     assert first_frame.size == (1280, 720)
 
     assert first_frame.getpixel((0, 0))[3] == 0
+
+
+def test_generate_character_video(tmp_path):
+    character_path = tmp_path / "character.png"
+    Image.new("RGBA", (20, 20), (255, 0, 0, 255)).save(character_path)
+
+    output_path = tmp_path / "character.mp4"
+
+    result = CharacterMotionEngine().generate(
+        character_path=character_path,
+        background_path=None,
+        output_path=output_path,
+        options={
+            "width": 64,
+            "height": 64,
+            "fps": 2,
+            "duration": 1,
+            "preset": "bounce",
+        },
+    )
+
+    assert result == output_path
+    assert output_path.is_file()
+    assert output_path.stat().st_size > 0
