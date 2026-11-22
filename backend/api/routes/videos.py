@@ -1,9 +1,13 @@
 
+import json
 import uuid
 
 from pathlib import Path
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, Form
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from backend.engines.motion_engine import MotionEngine
 from backend.engines.character_motion import CharacterMotionEngine
@@ -15,8 +19,115 @@ BASE_DIR = Path(__file__).resolve().parents[3]
 
 INPUT_DIR = BASE_DIR / "assets" / "input"
 OUTPUT_DIR = BASE_DIR / "assets" / "output"
+DOWNLOAD_DIR = BASE_DIR / "assets" / "downloads"
 
 ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+COVERR_API_URL = "https://api.coverr.co"
+MAX_COVERR_VIDEO_BYTES = 100 * 1024 * 1024
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    coverr_api_key: str = ""
+
+
+def coverr_request(path: str, api_key: str, *, method: str = "GET") -> bytes:
+    request = Request(
+        f"{COVERR_API_URL}{path}",
+        headers={"x-api-key": api_key},
+        method=method,
+    )
+
+    with urlopen(request, timeout=30) as response:
+        return response.read()
+
+
+def download_coverr_video(query: str) -> tuple[Path, dict]:
+    api_key = Settings().coverr_api_key
+
+    if not api_key:
+        raise HTTPException(status_code=500, detail="COVERR_API_KEY is not configured.")
+
+    search = urlencode({"query": query, "page_size": 20, "urls": "true"})
+
+    try:
+        results = json.loads(
+            coverr_request(f"/videos?{search}", api_key).decode("utf-8")
+        )
+        hits = results.get("hits", [])
+        video = next(
+            (
+                item
+                for item in hits
+                if item.get("is_vertical")
+                and 15 <= item.get("duration", 0) <= 20
+                and item.get("urls", {}).get("mp4_download")
+            ),
+            next(
+                (
+                    item
+                    for item in hits
+                    if item.get("is_vertical")
+                    and item.get("urls", {}).get("mp4_download")
+                ),
+                None,
+            ),
+        )
+
+        if not video:
+            raise HTTPException(
+                status_code=404,
+                detail="No downloadable vertical Coverr video found.",
+            )
+
+        DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = DOWNLOAD_DIR / f"coverr-{uuid.uuid4()}.mp4"
+        download_request = Request(video["urls"]["mp4_download"])
+
+        with urlopen(download_request, timeout=60) as response, output_path.open("wb") as file:
+            content_type = response.headers.get("Content-Type", "")
+            if content_type and not content_type.startswith("video/"):
+                raise ValueError("Coverr returned a non-video file.")
+
+            downloaded = 0
+            while chunk := response.read(1024 * 1024):
+                downloaded += len(chunk)
+                if downloaded > MAX_COVERR_VIDEO_BYTES:
+                    raise ValueError("Coverr video exceeds the 100 MB limit.")
+                file.write(chunk)
+
+        if not output_path.stat().st_size:
+            raise ValueError("Coverr returned an empty video file.")
+
+        coverr_request(f"/videos/{video['id']}/stats/downloads", api_key, method="PATCH")
+        return output_path, video
+
+    except HTTPException:
+        raise
+    except Exception as error:
+        if "output_path" in locals():
+            output_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=502, detail="Could not download Coverr video.") from error
+
+
+@router.post("/coverr/download")
+async def download_coverr_stock_video(query: str = Form(...)):
+    normalized_query = query.strip()
+
+    if not normalized_query:
+        raise HTTPException(status_code=400, detail="Search query is required.")
+
+    output_path, video = download_coverr_video(normalized_query)
+    return {
+        "status": "completed",
+        "video_id": video["id"],
+        "title": video.get("title", "Coverr video"),
+        "duration": video.get("duration"),
+        "video_path": str(output_path),
+        "video_url": f"/assets/downloads/{output_path.name}",
+        "source": {"name": "Coverr", "url": "https://coverr.co"},
+    }
 
 
 @router.post("/generate")

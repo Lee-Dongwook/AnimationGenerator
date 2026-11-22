@@ -8,9 +8,11 @@ dist/
 
 assets/input/*
 assets/output/*
+assets/downloads/*
 assets/characters/*
 !assets/input/.gitkeep
 !assets/output/.gitkeep
+!assets/downloads/.gitkeep
 !assets/characters/.gitkeep
 
 *.mp4

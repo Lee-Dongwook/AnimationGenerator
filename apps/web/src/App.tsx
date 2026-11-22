@@ -14,8 +14,11 @@ function App() {
   const [background, setBackground] = useState<File | null>(null)
   const [preset, setPreset] = useState('bounce')
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
+  const [videoSource, setVideoSource] = useState<'generated' | 'coverr' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [coverrQuery, setCoverrQuery] = useState('')
+  const [isDownloading, setIsDownloading] = useState(false)
 
   async function generateVideo(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -32,6 +35,7 @@ function App() {
 
     setError(null)
     setVideoUrl(null)
+    setVideoSource(null)
     setIsGenerating(true)
 
     try {
@@ -58,6 +62,7 @@ function App() {
       }
 
       setVideoUrl((result as GenerationResult).video_url)
+      setVideoSource('generated')
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -66,6 +71,36 @@ function App() {
       )
     } finally {
       setIsGenerating(false)
+    }
+  }
+
+  async function downloadCoverrVideo(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const query = coverrQuery.trim()
+
+    if (!query) {
+      setError('찾을 영상 키워드를 입력해 주세요.')
+      return
+    }
+
+    setError(null)
+    setVideoUrl(null)
+    setVideoSource(null)
+    setIsDownloading(true)
+
+    try {
+      const data = new FormData()
+      data.append('query', query)
+      const response = await fetch('/videos/coverr/download', { method: 'POST', body: data })
+      const result = await response.json()
+
+      if (!response.ok) throw new Error(result.detail || 'Coverr 영상 다운로드에 실패했습니다.')
+      setVideoUrl((result as GenerationResult).video_url)
+      setVideoSource('coverr')
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Coverr 영상 다운로드에 실패했습니다.')
+    } finally {
+      setIsDownloading(false)
     }
   }
 
@@ -135,11 +170,36 @@ function App() {
 
         {error && <p className="message error" role="alert">{error}</p>}
 
-        {videoUrl && (
+        {videoUrl && videoSource === 'generated' && (
           <div className="result">
             <h3>영상이 준비됐어요</h3>
             <video controls src={videoUrl} />
             <a href={videoUrl} download>MP4 다운로드</a>
+          </div>
+        )}
+      </section>
+
+      <section className="generator" aria-labelledby="coverr-title">
+        <h2 id="coverr-title">Coverr 영상 받기</h2>
+        <p className="intro">키워드에 맞는 세로형 영상을 찾아 다운로드합니다.</p>
+        <form onSubmit={downloadCoverrVideo}>
+          <label className="select-label" htmlFor="coverr-query">영상 키워드</label>
+          <input
+            id="coverr-query"
+            value={coverrQuery}
+            onChange={(event) => setCoverrQuery(event.target.value)}
+            placeholder="예: forest, ocean, city"
+          />
+          <button type="submit" disabled={isDownloading}>
+            {isDownloading ? '영상을 받는 중…' : 'Coverr 영상 다운로드'}
+          </button>
+        </form>
+        {error && <p className="message error" role="alert">{error}</p>}
+        {videoUrl && videoSource === 'coverr' && (
+          <div className="result">
+            <video controls src={videoUrl} />
+            <a href={videoUrl} download>MP4 다운로드</a>
+            <p><a className="source-link" href="https://coverr.co" target="_blank" rel="noreferrer">Video source: Coverr</a></p>
           </div>
         )}
       </section>
