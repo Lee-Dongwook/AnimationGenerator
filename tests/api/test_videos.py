@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from backend.api.routes import videos
@@ -31,7 +33,7 @@ def test_generate_returns_browser_video_url(tmp_path, monkeypatch):
     assert not list(input_dir.iterdir())
 
 
-def test_coverr_downloads_first_short_vertical_video(tmp_path, monkeypatch):
+def test_coverr_downloads_short_video_when_no_vertical_result_exists(tmp_path, monkeypatch):
     monkeypatch.setattr(videos, "DOWNLOAD_DIR", tmp_path)
     monkeypatch.setattr(videos, "Settings", lambda: SimpleNamespace(coverr_api_key="key"))
 
@@ -59,7 +61,7 @@ def test_coverr_downloads_first_short_vertical_video(tmp_path, monkeypatch):
             return Response(b"", "")
         if request.full_url.startswith(videos.COVERR_API_URL):
             return Response(
-                b'{"hits":[{"id":"short","title":"Short","duration":10,"is_vertical":true,"urls":{"mp4_download":"https://download/short"}},{"id":"ideal","title":"Ideal","duration":16,"is_vertical":true,"urls":{"mp4_download":"https://download/ideal"}}]}'
+                b'{"hits":[{"id":"short","title":"Forest Short","duration":"10","is_vertical":false,"urls":{"mp4_download":"https://download/short"}},{"id":"ideal","title":"Forest Ideal","duration":"16","is_vertical":false,"urls":{"mp4_download":"https://download/ideal"}}]}'
             )
         return Response(b"mp4-data", "video/mp4")
 
@@ -74,3 +76,15 @@ def test_coverr_downloads_first_short_vertical_video(tmp_path, monkeypatch):
     assert len(calls) == 3
     assert calls[-1][1] == "PATCH"
     assert (tmp_path / body["video_url"].split("/")[-1]).read_bytes() == b"mp4-data"
+
+
+def test_coverr_rejects_unrelated_search_results(monkeypatch):
+    monkeypatch.setattr(videos, "Settings", lambda: SimpleNamespace(coverr_api_key="key"))
+    monkeypatch.setattr(
+        videos,
+        "coverr_request",
+        lambda *_args, **_kwargs: b'{"hits":[{"id":"snow","title":"Snow falling","urls":{"mp4_download":"https://download/snow"}}]}',
+    )
+
+    with pytest.raises(HTTPException, match="No relevant downloadable Coverr video"):
+        videos.download_coverr_video("funny fails")

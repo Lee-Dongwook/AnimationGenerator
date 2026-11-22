@@ -1,5 +1,6 @@
 
 import json
+import re
 import uuid
 
 from pathlib import Path
@@ -55,30 +56,42 @@ def download_coverr_video(query: str) -> tuple[Path, dict]:
         results = json.loads(
             coverr_request(f"/videos?{search}", api_key).decode("utf-8")
         )
-        hits = results.get("hits", [])
+        terms = re.findall(r"\w+", query.lower())
+        downloadable = [
+            item
+            for item in results.get("hits", [])
+            if item.get("urls", {}).get("mp4_download")
+        ]
+        relevant = [
+            item
+            for item in downloadable
+            if all(
+                term in " ".join(
+                    str(value)
+                    for value in [
+                        item.get("title", ""),
+                        item.get("description", ""),
+                        *item.get("tags", []),
+                    ]
+                ).lower()
+                for term in terms
+            )
+        ]
+        candidates = [item for item in relevant if item.get("is_vertical")]
+        candidates = candidates or relevant
         video = next(
             (
                 item
-                for item in hits
-                if item.get("is_vertical")
-                and 15 <= item.get("duration", 0) <= 20
-                and item.get("urls", {}).get("mp4_download")
+                for item in candidates
+                if 15 <= float(item.get("duration", 0)) <= 20
             ),
-            next(
-                (
-                    item
-                    for item in hits
-                    if item.get("is_vertical")
-                    and item.get("urls", {}).get("mp4_download")
-                ),
-                None,
-            ),
+            next(iter(candidates), None),
         )
 
         if not video:
             raise HTTPException(
                 status_code=404,
-                detail="No downloadable vertical Coverr video found.",
+                detail="No relevant downloadable Coverr video found.",
             )
 
         DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)

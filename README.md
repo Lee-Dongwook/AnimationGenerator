@@ -39,7 +39,7 @@ python -m pytest -q
 
 ## Coverr 영상 다운로드
 
-`.env`에 `COVERR_API_KEY`를 설정한 뒤 다음 명령으로 키워드에 맞는 세로형 MP4를 받습니다. 15~20초 영상을 우선 선택하며, 결과는 `assets/downloads/`에 저장됩니다.
+`.env`에 `COVERR_API_KEY`를 설정한 뒤 다음 명령으로 키워드에 맞는 MP4를 받습니다. 세로형 15~20초 영상을 우선 선택하고, 없으면 같은 길이의 가로 영상을 받습니다. 결과는 `assets/downloads/`에 저장됩니다.
 
 ```bash
 ./scripts/download_coverr_video.sh "forest"
