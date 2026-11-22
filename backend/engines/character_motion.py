@@ -9,136 +9,165 @@ from pathlib import Path
 from PIL import Image
 
 from backend.core.motion_presets import get_motion
+from backend.engines.base import (
+    AnimationEngine,
+    ArtifactType,
+    EngineRequest,
+    EngineResult,
+)
 
+from backend.rendering.frame_renderer import FrameRenderer
+from backend.scenes.scene_schema import EngineType
 
-class CharacterMotionEngine:
+class CharacterMotionEngine(AnimationEngine):
 
-    def generate(
+    @property
+    def engine_type(self) -> EngineType:
+        return EngineType.TRANSFORM
+
+    def render(
         self,
-        character_path: Path,
-        output_path: Path,
-        background_path: Path | None = None,
-        options: dict | None = None,
-    ) -> Path:
+        request: EngineRequest,
+    ) -> EngineResult:
 
-        options = options or {}
+        if not request.image_path.is_file():
+            raise FileNotFoundError(request.image_path)
 
-        width = options.get("width", 1280)
-        height = options.get("height", 720)
-        fps = options.get("fps", 24)
-        duration = options.get("duration", 5)
-        preset = options.get("preset", "bounce")
+        if request.duration <= 0:
+            raise ValueError("Duration must be positive.")
 
-        if not character_path.exists():
-            raise FileNotFoundError(character_path)
+        if request.fps <= 0:
+            raise ValueError("FPS must be positive.")
 
-        if background_path and not background_path.exists():
-            raise FileNotFoundError(background_path)
+        if request.width <= 0 or request.height <= 0:
+            raise ValueError("Invalid frame dimensions.")
 
-        if not (1 <= duration <= 30):
-            raise ValueError("Duration must be between 1 and 30 seconds.")
+        preset = request.params.get("preset", "bounce")
 
-        if fps <= 0 or width <= 0 or height <= 0:
-            raise ValueError("Invalid video settings.")
+        character = Image.open(
+            request.image_path
+        ).convert("RGBA")
 
-        ffmpeg = shutil.which("ffmpeg")
-
-        if not ffmpeg:
-            raise RuntimeError("FFmpeg is not installed.")
-
-        # Load character with transparency
-        character = Image.open(character_path).convert("RGBA")
-
-        # Resize character while preserving aspect ratio
         character.thumbnail(
-            (width // 2, height * 3 // 4),
+            (
+                request.width // 2,
+                request.height * 3 // 4,
+            ),
             Image.Resampling.LANCZOS,
         )
 
-        # Load or create background
-        if background_path:
-            background = Image.open(background_path).convert("RGB")
-            background = background.resize(
-                (width, height),
+        renderer = FrameRenderer(
+            width=request.width,
+            height=request.height,
+        )
+
+        total_frames = round(
+            request.fps * request.duration
+        )
+
+        request.output_path.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        for frame_index in range(total_frames):
+
+            progress = frame_index / max(
+                total_frames - 1,
+                1,
+            )
+
+            motion = get_motion(
+                preset,
+                progress,
+            )
+
+            frame = renderer.create_canvas()
+
+            scale = motion["scale"]
+
+            char_width = max(
+                1,
+                int(character.width * scale),
+            )
+
+            char_height = max(
+                1,
+                int(character.height * scale),
+            )
+
+            animated_character = character.resize(
+                (char_width, char_height),
                 Image.Resampling.LANCZOS,
             )
-        else:
-            background = Image.new(
-                "RGB",
-                (width, height),
-                (180, 220, 245),
+
+            animated_character = animated_character.rotate(
+                motion["rotation"],
+                resample=Image.Resampling.BICUBIC,
+                expand=True,
             )
 
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+            x = int(
+                (request.width - animated_character.width) / 2
+                + motion["x"]
+            )
 
-        total_frames = fps * duration
+            y = int(
+                request.height * 0.72
+                - animated_character.height
+                + motion["y"]
+            )
 
-        with tempfile.TemporaryDirectory() as temp_dir:
+            # Clip the character image to the canvas.
+            left = max(0, x)
+            top = max(0, y)
 
-            temp_path = Path(temp_dir)
+            right = min(
+                request.width,
+                x + animated_character.width,
+            )
 
-            for frame_index in range(total_frames):
+            bottom = min(
+                request.height,
+                y + animated_character.height,
+            )
 
-                progress = frame_index / max(total_frames - 1, 1)
+            if left < right and top < bottom:
 
-                motion = get_motion(preset, progress)
-
-                frame = background.copy().convert("RGBA")
-
-                scale = motion["scale"]
-
-                char_width = max(1, int(character.width * scale))
-                char_height = max(1, int(character.height * scale))
-
-                animated_character = character.resize(
-                    (char_width, char_height),
-                    Image.Resampling.LANCZOS,
-                )
-
-                animated_character = animated_character.rotate(
-                    motion["rotation"],
-                    resample=Image.Resampling.BICUBIC,
-                    expand=True,
-                )
-
-                x = int(
-                    (width - animated_character.width) / 2
-                    + motion["x"]
-                )
-
-                y = int(
-                    height * 0.72
-                    - animated_character.height
-                    + motion["y"]
+                character_crop = animated_character.crop(
+                    (
+                        left - x,
+                        top - y,
+                        right - x,
+                        bottom - y,
+                    )
                 )
 
                 frame.alpha_composite(
-                    animated_character,
-                    (x, y),
+                    character_crop,
+                    (left, top),
                 )
 
-                frame.convert("RGB").save(
-                    temp_path / f"frame_{frame_index:05d}.jpg",
-                    quality=95,
-                )
-
-            command = [
-                ffmpeg,
-                "-y",
-                "-framerate", str(fps),
-                "-i", str(temp_path / "frame_%05d.jpg"),
-                "-frames:v", str(total_frames),
-                "-c:v", "libx264",
-                "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart",
-                str(output_path),
-            ]
-
-            subprocess.run(
-                command,
-                check=True,
-                capture_output=True,
-                text=True,
+            renderer.save_frame(
+                image=frame,
+                output_path=(
+                    request.output_path
+                    / f"frame_{frame_index:06d}.png"
+                ),
             )
 
-        return output_path
+        return EngineResult(
+            output_path=request.output_path,
+            artifact_type=ArtifactType.IMAGE_SEQUENCE,
+            media_type="image/png",
+            duration=request.duration,
+            fps=request.fps,
+            frame_count=total_frames,
+            has_alpha=True,
+            metadata={
+                "preset": preset,
+                "character_id": request.character_id,
+                "width": request.width,
+                "height": request.height,
+            },
+        )

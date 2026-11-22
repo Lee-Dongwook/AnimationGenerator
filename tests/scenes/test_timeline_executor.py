@@ -2,6 +2,7 @@ from pathlib import Path
 
 from backend.engines.base import (
     AnimationEngine,
+    ArtifactType,
     EngineRequest,
     EngineResult,
 )
@@ -32,9 +33,12 @@ class DummyEngine(AnimationEngine):
 
         return EngineResult(
             output_path=request.output_path,
-            media_type="video",
+            artifact_type=ArtifactType.IMAGE_SEQUENCE,
+            media_type="image/png",
             duration=request.duration,
             fps=request.fps,
+            frame_count=round(request.duration * request.fps),
+            has_alpha=True,
         )
 
 

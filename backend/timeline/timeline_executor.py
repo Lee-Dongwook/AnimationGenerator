@@ -63,7 +63,7 @@ class TimelineExecutor:
 
             result = self._execute_clip(
                 clip=clip,
-                output_path=output_dir / f"clip_{index:04d}.mp4",
+                output_path=output_dir / f"clip_{index:04d}",
             )
 
             results.append(
