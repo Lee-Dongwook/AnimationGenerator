@@ -1,9 +1,15 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from backend.scenes.scene_schema import EngineType
+
+class ArtifactType(str, Enum):
+    VIDEO = "video"
+    IMAGE_SEQUENCE = "image_sequence"
+    IMAGE = "image"
 
 @dataclass
 class EngineRequest:
@@ -28,9 +34,15 @@ class EngineRequest:
 class EngineResult:
     output_path: Path
 
+    artifact_type: ArtifactType
     media_type: str
+
     duration: float
     fps: int
+
+    frame_count: int
+
+    has_alpha: bool = False
 
     metadata: dict[str, Any] = field(default_factory=dict)
 
