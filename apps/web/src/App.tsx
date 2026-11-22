@@ -1,121 +1,104 @@
 import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import type { FormEvent } from 'react'
 import './App.css'
 
+const supportedTypes = ['image/png', 'image/jpeg', 'image/webp']
+
+type GenerationResult = {
+  video_url: string
+}
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [file, setFile] = useState<File | null>(null)
+  const [videoUrl, setVideoUrl] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [isGenerating, setIsGenerating] = useState(false)
+
+  async function generateVideo(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!file) {
+      setError('애니메이션으로 만들 이미지를 선택해 주세요.')
+      return
+    }
+
+    if (!supportedTypes.includes(file.type)) {
+      setError('PNG, JPG, JPEG, WEBP 파일만 업로드할 수 있습니다.')
+      return
+    }
+
+    setError(null)
+    setVideoUrl(null)
+    setIsGenerating(true)
+
+    try {
+      const data = new FormData()
+      data.append('file', file)
+
+      const response = await fetch('/videos/generate', {
+        method: 'POST',
+        body: data,
+      })
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.detail || '영상 생성에 실패했습니다.')
+      }
+
+      setVideoUrl((result as GenerationResult).video_url)
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : '영상 생성에 실패했습니다.',
+      )
+    } finally {
+      setIsGenerating(false)
+    }
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
+    <main>
+      <section className="hero">
+        <p className="eyebrow">KIDS MOTION ENGINE</p>
+        <h1>사진 한 장을<br />짧은 영상으로</h1>
+        <p className="intro">
+          이미지를 업로드하면 부드러운 줌 효과가 적용된 5초 MP4 영상을 만듭니다.
+        </p>
       </section>
 
-      <div className="ticks"></div>
+      <section className="generator" aria-labelledby="generator-title">
+        <h2 id="generator-title">영상 만들기</h2>
+        <form onSubmit={generateVideo}>
+          <label className="file-picker" htmlFor="image-file">
+            <span>{file ? file.name : '이미지를 선택하세요'}</span>
+            <small>PNG · JPG · WEBP</small>
+          </label>
+          <input
+            id="image-file"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(event) => {
+              setFile(event.target.files?.[0] ?? null)
+              setError(null)
+            }}
+          />
+          <button type="submit" disabled={isGenerating}>
+            {isGenerating ? '영상을 만드는 중…' : '5초 영상 만들기'}
+          </button>
+        </form>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
+        {error && <p className="message error" role="alert">{error}</p>}
+
+        {videoUrl && (
+          <div className="result">
+            <h3>영상이 준비됐어요</h3>
+            <video controls src={videoUrl} />
+            <a href={videoUrl} download>MP4 다운로드</a>
+          </div>
+        )}
       </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    </main>
   )
 }
 

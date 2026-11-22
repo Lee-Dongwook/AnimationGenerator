@@ -68,6 +68,7 @@ async def generate_video(
             "job_id": job_id,
             "status": "completed",
             "video_path": str(result),
+            "video_url": f"/assets/output/{output_path.name}",
         }
 
     except HTTPException:
@@ -172,6 +173,7 @@ async def generate_character_video(
             "status": "completed",
             "preset": preset,
             "video_path": str(result),
+            "video_url": f"/assets/output/{output_path.name}",
         }
 
     except HTTPException:

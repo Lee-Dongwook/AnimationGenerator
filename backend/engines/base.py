@@ -34,13 +34,13 @@ class EngineRequest:
 class EngineResult:
     output_path: Path
 
-    artifact_type: ArtifactType
     media_type: str
 
     duration: float
     fps: int
 
-    frame_count: int
+    artifact_type: ArtifactType = ArtifactType.VIDEO
+    frame_count: int = 0
 
     has_alpha: bool = False
 
